@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K-Means on Iris</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#0c0f14; --panel:#141921; --panel-2:#1b212c; --line:rgba(255,255,255,.06);
+    --ink:#e8ebef; --ink-dim:#8b95a4; --ink-faint:#5a6473; --accent:#9fb4ff; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:
+      radial-gradient(1200px 700px at 80% -10%, rgba(90,209,200,.06), transparent 60%),
+      radial-gradient(900px 600px at -5% 110%, rgba(255,122,144,.06), transparent 55%),
+      var(--bg);
+    color:var(--ink); font-family:"JetBrains Mono",ui-monospace,monospace;
+    -webkit-font-smoothing:antialiased; height:100vh;
+  }
+  main{height:100%;display:flex;gap:18px;padding:22px;align-items:stretch}
+  .stage{flex:1 1 560px;min-width:320px;background:var(--panel);
+    border:1px solid var(--line);border-radius:14px;position:relative;overflow:hidden;
+    box-shadow:0 20px 60px -30px rgba(0,0,0,.8);}
+  canvas{display:block;width:100%;height:100%}
+  .controls{flex:0 0 200px;display:flex;flex-direction:column;gap:12px;justify-content:center}
+  .state{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .readout{display:flex;justify-content:space-between;align-items:baseline;padding:7px 0;border-bottom:1px dashed var(--line)}
+  .readout:last-child{border-bottom:none}
+  .readout .k{color:var(--ink-dim);font-size:11.5px}
+  .readout .v{font-size:19px;font-weight:700}
+  .readout .v.small{font-size:12px;font-weight:500}
+  #status{color:var(--accent)}
+  button{font-family:inherit;font-size:13px;color:var(--ink);background:var(--panel-2);
+    border:1px solid var(--line);border-radius:10px;padding:13px 12px;cursor:pointer;
+    transition:.15s border-color,.15s background,.1s transform;}
+  button:hover{border-color:var(--accent);background:#222a37}
+  button:active{transform:translateY(1px)}
+  button.primary{background:linear-gradient(180deg,#27405f,#1d3047);border-color:#3a577d;
+    color:#dfe9ff;font-weight:700}
+  button.primary:hover{border-color:var(--accent)}
+</style>
+</head>
+<body>
+<main>
+  <div class="stage"><canvas id="cv"></canvas></div>
+  <div class="controls">
+    <div class="state">
+      <div class="readout"><span class="k">Iteration</span><span class="v" id="r-iter">0</span></div>
+      <div class="readout"><span class="k">Inertia&nbsp;J</span><span class="v" id="r-J">—</span></div>
+      <div class="readout"><span class="k">Status</span><span class="v small" id="status">random start</span></div>
+    </div>
+    <button class="primary" id="btn-start">▶ Start</button>
+    <button id="btn-reset">↻ New random</button>
+  </div>
+</main>
+<script>
+const IRIS = {"features": ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)"], "data": [[5.1, 3.5, 1.4, 0.2], [4.9, 3.0, 1.4, 0.2], [4.7, 3.2, 1.3, 0.2], [4.6, 3.1, 1.5, 0.2], [5.0, 3.6, 1.4, 0.2], [5.4, 3.9, 1.7, 0.4], [4.6, 3.4, 1.4, 0.3], [5.0, 3.4, 1.5, 0.2], [4.4, 2.9, 1.4, 0.2], [4.9, 3.1, 1.5, 0.1], [5.4, 3.7, 1.5, 0.2], [4.8, 3.4, 1.6, 0.2], [4.8, 3.0, 1.4, 0.1], [4.3, 3.0, 1.1, 0.1], [5.8, 4.0, 1.2, 0.2], [5.7, 4.4, 1.5, 0.4], [5.4, 3.9, 1.3, 0.4], [5.1, 3.5, 1.4, 0.3], [5.7, 3.8, 1.7, 0.3], [5.1, 3.8, 1.5, 0.3], [5.4, 3.4, 1.7, 0.2], [5.1, 3.7, 1.5, 0.4], [4.6, 3.6, 1.0, 0.2], [5.1, 3.3, 1.7, 0.5], [4.8, 3.4, 1.9, 0.2], [5.0, 3.0, 1.6, 0.2], [5.0, 3.4, 1.6, 0.4], [5.2, 3.5, 1.5, 0.2], [5.2, 3.4, 1.4, 0.2], [4.7, 3.2, 1.6, 0.2], [4.8, 3.1, 1.6, 0.2], [5.4, 3.4, 1.5, 0.4], [5.2, 4.1, 1.5, 0.1], [5.5, 4.2, 1.4, 0.2], [4.9, 3.1, 1.5, 0.2], [5.0, 3.2, 1.2, 0.2], [5.5, 3.5, 1.3, 0.2], [4.9, 3.6, 1.4, 0.1], [4.4, 3.0, 1.3, 0.2], [5.1, 3.4, 1.5, 0.2], [5.0, 3.5, 1.3, 0.3], [4.5, 2.3, 1.3, 0.3], [4.4, 3.2, 1.3, 0.2], [5.0, 3.5, 1.6, 0.6], [5.1, 3.8, 1.9, 0.4], [4.8, 3.0, 1.4, 0.3], [5.1, 3.8, 1.6, 0.2], [4.6, 3.2, 1.4, 0.2], [5.3, 3.7, 1.5, 0.2], [5.0, 3.3, 1.4, 0.2], [7.0, 3.2, 4.7, 1.4], [6.4, 3.2, 4.5, 1.5], [6.9, 3.1, 4.9, 1.5], [5.5, 2.3, 4.0, 1.3], [6.5, 2.8, 4.6, 1.5], [5.7, 2.8, 4.5, 1.3], [6.3, 3.3, 4.7, 1.6], [4.9, 2.4, 3.3, 1.0], [6.6, 2.9, 4.6, 1.3], [5.2, 2.7, 3.9, 1.4], [5.0, 2.0, 3.5, 1.0], [5.9, 3.0, 4.2, 1.5], [6.0, 2.2, 4.0, 1.0], [6.1, 2.9, 4.7, 1.4], [5.6, 2.9, 3.6, 1.3], [6.7, 3.1, 4.4, 1.4], [5.6, 3.0, 4.5, 1.5], [5.8, 2.7, 4.1, 1.0], [6.2, 2.2, 4.5, 1.5], [5.6, 2.5, 3.9, 1.1], [5.9, 3.2, 4.8, 1.8], [6.1, 2.8, 4.0, 1.3], [6.3, 2.5, 4.9, 1.5], [6.1, 2.8, 4.7, 1.2], [6.4, 2.9, 4.3, 1.3], [6.6, 3.0, 4.4, 1.4], [6.8, 2.8, 4.8, 1.4], [6.7, 3.0, 5.0, 1.7], [6.0, 2.9, 4.5, 1.5], [5.7, 2.6, 3.5, 1.0], [5.5, 2.4, 3.8, 1.1], [5.5, 2.4, 3.7, 1.0], [5.8, 2.7, 3.9, 1.2], [6.0, 2.7, 5.1, 1.6], [5.4, 3.0, 4.5, 1.5], [6.0, 3.4, 4.5, 1.6], [6.7, 3.1, 4.7, 1.5], [6.3, 2.3, 4.4, 1.3], [5.6, 3.0, 4.1, 1.3], [5.5, 2.5, 4.0, 1.3], [5.5, 2.6, 4.4, 1.2], [6.1, 3.0, 4.6, 1.4], [5.8, 2.6, 4.0, 1.2], [5.0, 2.3, 3.3, 1.0], [5.6, 2.7, 4.2, 1.3], [5.7, 3.0, 4.2, 1.2], [5.7, 2.9, 4.2, 1.3], [6.2, 2.9, 4.3, 1.3], [5.1, 2.5, 3.0, 1.1], [5.7, 2.8, 4.1, 1.3], [6.3, 3.3, 6.0, 2.5], [5.8, 2.7, 5.1, 1.9], [7.1, 3.0, 5.9, 2.1], [6.3, 2.9, 5.6, 1.8], [6.5, 3.0, 5.8, 2.2], [7.6, 3.0, 6.6, 2.1], [4.9, 2.5, 4.5, 1.7], [7.3, 2.9, 6.3, 1.8], [6.7, 2.5, 5.8, 1.8], [7.2, 3.6, 6.1, 2.5], [6.5, 3.2, 5.1, 2.0], [6.4, 2.7, 5.3, 1.9], [6.8, 3.0, 5.5, 2.1], [5.7, 2.5, 5.0, 2.0], [5.8, 2.8, 5.1, 2.4], [6.4, 3.2, 5.3, 2.3], [6.5, 3.0, 5.5, 1.8], [7.7, 3.8, 6.7, 2.2], [7.7, 2.6, 6.9, 2.3], [6.0, 2.2, 5.0, 1.5], [6.9, 3.2, 5.7, 2.3], [5.6, 2.8, 4.9, 2.0], [7.7, 2.8, 6.7, 2.0], [6.3, 2.7, 4.9, 1.8], [6.7, 3.3, 5.7, 2.1], [7.2, 3.2, 6.0, 1.8], [6.2, 2.8, 4.8, 1.8], [6.1, 3.0, 4.9, 1.8], [6.4, 2.8, 5.6, 2.1], [7.2, 3.0, 5.8, 1.6], [7.4, 2.8, 6.1, 1.9], [7.9, 3.8, 6.4, 2.0], [6.4, 2.8, 5.6, 2.2], [6.3, 2.8, 5.1, 1.5], [6.1, 2.6, 5.6, 1.4], [7.7, 3.0, 6.1, 2.3], [6.3, 3.4, 5.6, 2.4], [6.4, 3.1, 5.5, 1.8], [6.0, 3.0, 4.8, 1.8], [6.9, 3.1, 5.4, 2.1], [6.7, 3.1, 5.6, 2.4], [6.9, 3.1, 5.1, 2.3], [5.8, 2.7, 5.1, 1.9], [6.8, 3.2, 5.9, 2.3], [6.7, 3.3, 5.7, 2.5], [6.7, 3.0, 5.2, 2.3], [6.3, 2.5, 5.0, 1.9], [6.5, 3.0, 5.2, 2.0], [6.2, 3.4, 5.4, 2.3], [5.9, 3.0, 5.1, 1.8]], "target": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], "target_names": ["setosa", "versicolor", "virginica"]};
+const FEAT = IRIS.features;
+const K = 3;
+const CLUSTER = ['#ff7a90','#5ad1c8','#f7c948'];
+const ASSIGN_HOLD = 520, GLIDE_DUR = 650, PAUSE = 320;
+
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+let dpr = Math.max(1, window.devicePixelRatio||1);
+
+let fx = 2, fy = 3;            // petal length / petal width
+let pts = [], bounds = {};
+let centroids = [], glideFrom = [], glideTo = [];
+let trails = [], labels = [];
+let iter = 0, J = 0, converged = false;
+let phase = 'idle';            // 'idle' | 'assigning' | 'gliding'
+let assignStart = 0, glideStart = 0, lastEvent = 0, playing = false;
+
+function dist2(a,b){return (a[0]-b[0])**2+(a[1]-b[1])**2;}
+function ease(t){return t<.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2;}
+function rebuildPoints(){
+  pts = IRIS.data.map(r => [r[fx], r[fy]]);
+  const xs=pts.map(p=>p[0]), ys=pts.map(p=>p[1]);
+  const px=(Math.max(...xs)-Math.min(...xs))*0.08, py=(Math.max(...ys)-Math.min(...ys))*0.08;
+  bounds={xmin:Math.min(...xs)-px,xmax:Math.max(...xs)+px,ymin:Math.min(...ys)-py,ymax:Math.max(...ys)+py};
+}
+function nearest(p){let b=0,bd=Infinity;for(let c=0;c<K;c++){const d=dist2(p,centroids[c]);if(d<bd){bd=d;b=c;}}return b;}
+function assignStep(){let ch=false;for(let i=0;i<pts.length;i++){const c=nearest(pts[i]);if(labels[i]!==c){labels[i]=c;ch=true;}}return ch;}
+function means(){const s=Array.from({length:K},()=>[0,0,0]);for(let i=0;i<pts.length;i++){const c=labels[i];s[c][0]+=pts[i][0];s[c][1]+=pts[i][1];s[c][2]++;}
+  const m=[];for(let c=0;c<K;c++){m.push(s[c][2]>0?[s[c][0]/s[c][2],s[c][1]/s[c][2]]:pts[(Math.random()*pts.length)|0].slice());}return m;}
+function computeJ(){let j=0;for(let i=0;i<pts.length;i++)if(labels[i]>=0)j+=dist2(pts[i],centroids[labels[i]]);return j;}
+
+function status(t){document.getElementById('status').textContent=t;}
+function updateReadout(){document.getElementById('r-iter').textContent=iter;
+  document.getElementById('r-J').textContent = labels.some(l=>l>=0)?J.toFixed(2):'—';}
+function setLabel(){document.getElementById('btn-start').textContent = playing?'⏸ Pause':(converged?'✓ done':'▶ Start');}
+
+function randomStart(){
+  rebuildPoints();
+  const {xmin,xmax,ymin,ymax}=bounds;
+  centroids = Array.from({length:K},()=>[xmin+Math.random()*(xmax-xmin), ymin+Math.random()*(ymax-ymin)]);
+  trails = centroids.map(c=>[c.slice()]);
+  labels = new Array(pts.length).fill(-1);
+  iter=0; converged=false; phase='idle'; playing=false;
+  assignStep(); J=computeJ();
+  status('random start'); setLabel(); updateReadout();
+}
+
+function doAssign(now){                      // STEP A: recolour by ownership (centroids still)
+  const changed = assignStep();
+  J = computeJ(); updateReadout();
+  if(!changed && iter>0){                     // no reassignment -> converged
+    converged=true; playing=false; status('converged in '+iter+' steps'); setLabel(); phase='idle'; return;
+  }
+  phase='assigning'; assignStart=now; status('assigning points…');
+}
+function startGlide(now){                     // STEP B: centroids walk to the means
+  glideFrom = centroids.map(c=>c.slice());
+  glideTo = means();
+  phase='gliding'; glideStart=now; status('moving centroids…');
+}
+function finishGlide(now){
+  centroids = glideTo.map(c=>c.slice());
+  for(let c=0;c<K;c++) trails[c].push(centroids[c].slice());
+  iter++; J=computeJ(); updateReadout();
+  phase='idle'; lastEvent=now;
+}
+
+function resize(){
+  const r = cv.parentElement.getBoundingClientRect();
+  cv.width=r.width*dpr; cv.height=r.height*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); draw();
+}
+function plotRect(){const r=cv.getBoundingClientRect();return {L:54,R:r.width-18,T:18,B:r.height-44,w:r.width,h:r.height};}
+function toPx(p){const pr=plotRect();const {xmin,xmax,ymin,ymax}=bounds;
+  return [ pr.L+(p[0]-xmin)/(xmax-xmin)*(pr.R-pr.L), pr.B-(p[1]-ymin)/(ymax-ymin)*(pr.B-pr.T) ];}
+
+function draw(){
+  const pr=plotRect();
+  ctx.clearRect(0,0,pr.w,pr.h);
+  ctx.strokeStyle='rgba(255,255,255,.05)'; ctx.lineWidth=1; ctx.fillStyle='#5a6473'; ctx.font='10px "JetBrains Mono"';
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  const {xmin,xmax,ymin,ymax}=bounds;
+  for(let g=0;g<=5;g++){
+    const xv=xmin+(xmax-xmin)*g/5, yv=ymin+(ymax-ymin)*g/5;
+    const xp=toPx([xv,ymin])[0], yp=toPx([xmin,yv])[1];
+    ctx.beginPath();ctx.moveTo(xp,pr.T);ctx.lineTo(xp,pr.B);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(pr.L,yp);ctx.lineTo(pr.R,yp);ctx.stroke();
+    ctx.fillText(xv.toFixed(1), xp, pr.B+6);
+    ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText(yv.toFixed(1), pr.L-8, yp);ctx.textAlign='center';ctx.textBaseline='top';
+  }
+  ctx.fillStyle='#8b95a4'; ctx.font='16px "JetBrains Mono"';
+  ctx.fillText(FEAT[fx], (pr.L+pr.R)/2, pr.B+22);
+  ctx.save();ctx.translate(14,(pr.T+pr.B)/2);ctx.rotate(-Math.PI/2);ctx.fillText(FEAT[fy],0,0);ctx.restore();
+  for(let c=0;c<K;c++){
+    ctx.strokeStyle=CLUSTER[c]; ctx.globalAlpha=.35; ctx.lineWidth=1.5; ctx.beginPath();
+    trails[c].forEach((p,i)=>{const q=toPx(p); i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);}); ctx.stroke();
+    ctx.globalAlpha=.5; ctx.lineWidth=1.2; const s=toPx(trails[c][0]);
+    ctx.beginPath();ctx.arc(s[0],s[1],5,0,7);ctx.stroke(); ctx.globalAlpha=1;
+  }
+  for(let i=0;i<pts.length;i++){
+    const q=toPx(pts[i]);
+    ctx.fillStyle = labels[i]>=0?CLUSTER[labels[i]]:'#697080'; ctx.globalAlpha=.82;
+    ctx.beginPath();ctx.arc(q[0],q[1],4,0,7);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  for(let c=0;c<K;c++){
+    const q=toPx(centroids[c]);
+    ctx.shadowColor=CLUSTER[c]; ctx.shadowBlur=18; ctx.fillStyle=CLUSTER[c];
+    ctx.beginPath();const s=9;
+    ctx.moveTo(q[0],q[1]-s);ctx.lineTo(q[0]+s,q[1]);ctx.lineTo(q[0],q[1]+s);ctx.lineTo(q[0]-s,q[1]);ctx.closePath();ctx.fill();
+    ctx.shadowBlur=0; ctx.lineWidth=2; ctx.strokeStyle='#0c0f14'; ctx.stroke();
+    ctx.fillStyle='#0c0f14'; ctx.beginPath();ctx.arc(q[0],q[1],2,0,7);ctx.fill();
+  }
+}
+
+document.getElementById('btn-start').onclick=()=>{
+  if(converged) return;
+  playing=!playing; setLabel();
+  if(playing){ lastEvent = performance.now()-PAUSE; } else { status('paused'); }
+};
+document.getElementById('btn-reset').onclick=()=>randomStart();
+
+function frame(now){
+  if(phase==='gliding'){
+    const t=Math.min(1,(now-glideStart)/GLIDE_DUR), e=ease(t);
+    centroids = glideFrom.map((c,ci)=>[c[0]+(glideTo[ci][0]-c[0])*e, c[1]+(glideTo[ci][1]-c[1])*e]);
+    if(t>=1) finishGlide(now);
+  } else if(phase==='assigning'){
+    if(now-assignStart>ASSIGN_HOLD) startGlide(now);
+  } else if(playing && !converged){
+    if(now-lastEvent>PAUSE) doAssign(now);
+  }
+  draw(); requestAnimationFrame(frame);
+}
+window.addEventListener('resize',resize);
+randomStart(); resize(); requestAnimationFrame(frame);
+</script>
+</body>
+</html>
